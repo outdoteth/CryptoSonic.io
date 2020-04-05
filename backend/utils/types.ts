@@ -7,3 +7,12 @@ export interface Tick {
 	pair: string,
 	name: string,
 }
+
+export interface Candle {
+	openTimestamp: number,
+	volume: number,
+	high: number,
+	low: number,
+	open: number,
+	close: number,
+}
