@@ -3,9 +3,9 @@
         "outDir": "./built",
         "allowJs": true,
         "target": "es5",
-	"types": [
-		"node"
-	]
+        "types": [
+            "node"
+        ]
     },
     "include": [
         "./backend/**/*"

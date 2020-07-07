@@ -37,89 +37,145 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 };
 var mongodb_1 = require("mongodb");
 var dbUrl = 'mongodb://localhost:27017';
-var statsDbName = 'stats';
+var STATS_DB_NAME = 'stats';
+var CANDLES_DB_NAME = "candles";
 var client = new mongodb_1.MongoClient(dbUrl);
 var Database = /** @class */ (function () {
     function Database() {
         this.dbReference = {
             statsDb: null,
+            candlesDb: null,
         };
     }
-    Database.prototype.start = function () {
+    Database.prototype.start = function (coins) {
         return __awaiter(this, void 0, void 0, function () {
-            return __generator(this, function (_a) {
-                switch (_a.label) {
+            var _a, _b;
+            return __generator(this, function (_c) {
+                switch (_c.label) {
                     case 0: return [4 /*yield*/, client.connect()];
                     case 1:
-                        _a.sent();
-                        this.dbReference.statsDb = client.db(statsDbName);
+                        _c.sent();
+                        _a = this.dbReference;
+                        return [4 /*yield*/, client.db(STATS_DB_NAME)];
+                    case 2:
+                        _a.statsDb = _c.sent();
+                        _b = this.dbReference;
+                        return [4 /*yield*/, client.db(CANDLES_DB_NAME)];
+                    case 3:
+                        _b.candlesDb = _c.sent();
                         console.log('Connected to mongodb server');
-                        return [4 /*yield*/, this.initialise()];
+                        return [4 /*yield*/, this.initialise(coins)];
+                    case 4:
+                        _c.sent();
+                        return [2 /*return*/];
+                }
+            });
+        });
+    };
+    Database.prototype.initialise = function (coins) {
+        return __awaiter(this, void 0, void 0, function () {
+            var statsCollections, statsSimpleExists, statsSimpleCollection;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0: return [4 /*yield*/, this.dbReference.statsDb.listCollections().toArray()];
+                    case 1:
+                        statsCollections = _a.sent();
+                        statsSimpleExists = statsCollections.find(function (_a) {
+                            var name = _a.name;
+                            return name === "stats:simple";
+                        });
+                        if (!!statsSimpleExists) return [3 /*break*/, 3];
+                        return [4 /*yield*/, this.createStatsSimple()];
                     case 2:
                         _a.sent();
+                        _a.label = 3;
+                    case 3: return [4 /*yield*/, this.dbReference.statsDb.collection("stats:simple")];
+                    case 4:
+                        statsSimpleCollection = _a.sent();
+                        coins.forEach(function (coin) {
+                            statsSimpleCollection.findOneAndUpdate({ name: coin.name, symbol: coin.symbol }, { "$setOnInsert": {
+                                    name: coin.name,
+                                    symbol: coin.symbol,
+                                    open: 0, volume: 0, lastUpdate: 0
+                                } }, { upsert: true } // insert the document if it does not exist
+                            );
+                        });
                         return [2 /*return*/];
                 }
             });
         });
     };
-    Database.prototype.initialise = function () {
+    Database.prototype.createCandlesCollection = function (collectionName) {
         return __awaiter(this, void 0, void 0, function () {
+            var _this = this;
             return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0: return [4 /*yield*/, this.createStatsSimple()];
-                    case 1:
-                        _a.sent();
-                        return [2 /*return*/];
-                }
-            });
-        });
-    };
-    Database.prototype.createStatsSimple = function () {
-        return __awaiter(this, void 0, void 0, function () {
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0: return [4 /*yield*/, this.dbReference.statsDb.createCollection('stats:simple', {
-                            'validator': {
-                                '$jsonSchema': {
-                                    'bsonType': 'object',
-                                    'required': ['name', 'lastUpdated', 'symbol', 'exchanges'],
-                                    'properties': {
-                                        'name': {
-                                            'bsonType': 'string',
-                                            'description': 'Asset must have a stringified name',
-                                        },
-                                        'lastUpdated': {
-                                            'bsonType': 'int',
-                                            'description': 'Must contain a unix timestamp defining the last updated date'
-                                        },
-                                        'symbol': {
-                                            'bsonType': 'string',
-                                            'description': 'Asset must contain a symbol e.g. "ETH"',
-                                        },
-                                        'exchanges': {
-                                            'bsonType': 'object',
-                                            'description': 'Must contain information regarding its price data for each exchange',
-                                            'additionalProperties': {
-                                                'bsonType': 'object',
-                                                'properties': {
-                                                    'price': {
-                                                        'bsonType': 'number',
-                                                    },
-                                                    'volume': {
-                                                        'bsonType': 'number',
-                                                    }
+                return [2 /*return*/, new Promise(function (resolve) { return __awaiter(_this, void 0, void 0, function () {
+                        var candleCollection;
+                        return __generator(this, function (_a) {
+                            switch (_a.label) {
+                                case 0: return [4 /*yield*/, this.dbReference.candlesDb.createCollection(collectionName, {
+                                        "validator": {
+                                            "$jsonSchema": {
+                                                "bsonType": "object",
+                                                "required": ["high", "low", "open", "close", "volume", "openTimestamp"],
+                                                "properties": {
+                                                    "high": { "bsonType": ["double", "int"], "description": "high" },
+                                                    "low": { "bsonType": ["double", "int"], "description": "low" },
+                                                    "open": { "bsonType": ["double", "int"], "description": "open" },
+                                                    "close": { "bsonType": ["double", "int"], "description": "close" },
+                                                    "volume": { "bsonType": ["double", "int"], "description": "volume" },
+                                                    // Javascript casts all numbers to a double so use that for numbers
+                                                    "openTimestamp": { "bsonType": ["double", "int"], "description": "openTimestamp" }
                                                 }
                                             }
                                         }
-                                    }
-                                }
+                                    })];
+                                case 1:
+                                    candleCollection = _a.sent();
+                                    console.log("Created collection " + collectionName + " in candles db");
+                                    resolve(candleCollection);
+                                    return [2 /*return*/];
                             }
-                        })];
-                    case 1:
-                        _a.sent();
-                        console.log('Created stats:simple');
-                        return [2 /*return*/];
-                }
+                        });
+                    }); })];
+            });
+        });
+    };
+    /**
+     * Contains 24hr price and volume info
+     */
+    Database.prototype.createStatsSimple = function () {
+        return __awaiter(this, void 0, void 0, function () {
+            var _this = this;
+            return __generator(this, function (_a) {
+                return [2 /*return*/, new Promise(function (resolve) { return __awaiter(_this, void 0, void 0, function () {
+                        var statsSimpleCollection;
+                        return __generator(this, function (_a) {
+                            switch (_a.label) {
+                                case 0: return [4 /*yield*/, this.dbReference.statsDb.createCollection('stats:simple', {
+                                        'validator': {
+                                            '$jsonSchema': {
+                                                'bsonType': 'object',
+                                                "description": "Updated if time a new candle is added AND it has been at least 5 minutes after last update",
+                                                'required': ['lastUpdate', 'name', 'symbol', 'open', "volume"],
+                                                'properties': {
+                                                    "lastUpdate": { "bsonType": ["double", "int"] },
+                                                    "name": { "bsonType": "string" },
+                                                    "symbol": { "bsonType": "string" },
+                                                    "open": { "bsonType": ["double", "int"] },
+                                                    "volume": { "bsonType": ["double", "int"], "description": "Dollar aggregate volume accross all exchanges and pairs" },
+                                                }
+                                            }
+                                        }
+                                    })];
+                                case 1:
+                                    statsSimpleCollection = _a.sent();
+                                    console.log('Created collection stats:simple in stats db');
+                                    resolve(statsSimpleCollection);
+                                    return [2 /*return*/];
+                            }
+                        });
+                    }); })];
             });
         });
     };

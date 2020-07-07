@@ -40,13 +40,14 @@ var Feeder = require("./feeders/feeder");
 var Data = require("./data/data");
 var Cache = require("./cache/cache");
 var Database = require("./database/database");
+var coins_json_1 = require("./coins.json");
 function main() {
     return __awaiter(this, void 0, void 0, function () {
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
                     console.log('Initialising project...\n');
-                    return [4 /*yield*/, Database.start()];
+                    return [4 /*yield*/, Database.start(coins_json_1.coins)];
                 case 1:
                     _a.sent();
                     Feeder.start();

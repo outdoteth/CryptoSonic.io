@@ -12,8 +12,6 @@ var __extends = (this && this.__extends) || (function () {
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
-//class EventsEmitter extends EventEmitter {}
-//const Events = new EventsEmitter();
 var events_1 = require("events");
 var EventsEmitter = /** @class */ (function (_super) {
     __extends(EventsEmitter, _super);

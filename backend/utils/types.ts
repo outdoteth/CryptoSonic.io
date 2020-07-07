@@ -16,3 +16,11 @@ export interface Candle {
 	open: number,
 	close: number,
 }
+
+export type Timestamp = number;
+
+export interface DateRange {
+	from: Timestamp,
+	to: Timestamp,
+}
+

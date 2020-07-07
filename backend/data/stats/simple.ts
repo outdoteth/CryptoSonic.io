@@ -2,86 +2,46 @@ import Events = require('../../events/events');
 import Database = require('../../database/database');
 import {cacheDb} from '../../cache/cache';
 import {Candle} from '../../utils/types';
+import { candles } from "../../feeders/candles";
+import { FIVE_MINUTES, DAY } from '../../utils/constants';
+import * as _ from 'lodash';
 
 interface SimpleStatCache {
 	lastUpdate: number,
 	exchanges: any,
 }
 
-
 export function start() {
 	console.log('Starting SimpleStats');
 
-	Events.on('NEW_TICK', tick => {
+	candles.subscribe({
+		name: "5min",
+		timeframe: FIVE_MINUTES,
+		staleDuration: FIVE_MINUTES * 2,
+	}, async candleInfo => {
+		const { expiredCandles, name, candle, pair, candleCollectionName } = candleInfo;
 
-		cacheDb.get(`stats:simple:${tick.name}`, (err, cacheItem) => {
-			if (err) throw new Error(err);
+		// Update the stats; open, volume and lastUpdate
+		const statsCollection = await Database.dbReference.statsDb.collection("stats:simple");
+		const stats = await statsCollection.findOne({ name });
+		console.log(stats)
 
-			if (cacheItem === null) {
-				const initCacheData: SimpleStatCache = {
-					lastUpdate: Date.now(),		
-					exchanges: {
-						[`${tick.exchange}`]: {
-							[`${tick.pair}`]: [
-								{
-									openTimestamp: Math.floor(Date.now() / (1000 * 60 * 5)) * 1000 * 60 * 5, // 5 minute candles 
-									volume: tick.volume,
-									high: tick.price,
-									low: tick.price,
-									open: tick.price,
-									close: tick.price,	
-								}
-							]
-						}	
-					},
-				};
+		stats.open = _.last(_.sortBy(expiredCandles, "openTimestamp"))?.close || 0;
 
-				cacheDb.set(`stats:simple:${tick.name}`, JSON.stringify(initCacheData), (err, res) => {
-					if (err) throw new Error(err);
-				}); 
-			} else {
-				const newCacheItem = JSON.parse(cacheItem);
+		const staleVolume = expiredCandles.reduce((volume, candle) => volume + candle.volume, 0);
+		stats.volume += candle.volume;
+		stats.volume -= staleVolume;
 
-				// Initialise the exhange and pair key/value pairs in case they have been erased or don't already exist
-				if (!newCacheItem.exchanges[`${tick.exchange}`]) newCacheItem.exchanges[`${tick.exchange}`] = {};
-				if (!newCacheItem.exchanges[`${tick.exchange}`][`${tick.pair}`]) newCacheItem.exchanges[`${tick.exchange}`][`${tick.pair}`] = [];
-				
-				const lastPairCandle = newCacheItem.exchanges[`${tick.exchange}`][`${tick.pair}`].slice(-1)[0];
-				const currentCandleOpenTimestamp = Math.floor(Date.now() / (1000 * 60 * 5)) * 1000 * 60 * 5;
+		stats.lastUpdate = Date.now();
 
-				// Check that the candle fits within the current candle timeframe, otherwise create a new candle
-				if (lastPairCandle && lastPairCandle.openTimestamp === currentCandleOpenTimestamp ) {
-					lastPairCandle.volume += tick.volume;
-					lastPairCandle.close = tick.price;	
-					if (tick.price > lastPairCandle.high) lastPairCandle.high = tick.price;
-				       	if (tick.price < lastPairCandle.low) lastPairCandle.low = tick.price;	
-				} else {
-					//TODO: keep on pushing empty candles until the timestamp matches the current timestamp
-					const newPairCandle: Candle = {
-						openTimestamp: currentCandleOpenTimestamp,
-						volume: tick.volume,
-						high: tick.price,
-						low: tick.price,
-						open: tick.price,
-						close: tick.price
-					}
+		const collection = await Database.dbReference.candlesDb.collection(candleCollectionName);
+		const list = await collection.find(); 
+		console.log("all candles", await list.toArray());
 
-					newCacheItem.exchanges[`${tick.exchange}`][`${tick.pair}`].push(newPairCandle);
-				}
-
-				// Check whether we should update the cache or the main db
-				if (Date.now() - newCacheItem.lastUpdate > 1000 * 10) {
-					//TODO: Merge and append the cache data with the db data
-					cacheDb.set(`stats:simple:${tick.name}`, JSON.stringify({ lastUpdate: Date.now(), exchanges: {} }), (err, res) => {
-						if (err) throw new Error(err);
-					});
-				} else {
-					cacheDb.set(`stats:simple:${tick.name}`, JSON.stringify(newCacheItem), (err, res) => {
-						if (err) throw new Error(err);
-					});
-				}
-			}
-		});
+		statsCollection.findOneAndUpdate(
+			{ _id: stats._id},
+			{ $set: { ...stats }},
+		);
 	});
 }
 

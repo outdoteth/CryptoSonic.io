@@ -1,83 +1,97 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-var Events = require("../../events/events");
-var cache_1 = require("../../cache/cache");
-function start() {
-    console.log('Starting SimpleStats');
-    Events.on('NEW_TICK', function (tick) {
-        cache_1.cacheDb.get("stats:simple:" + tick.name, function (err, cacheItem) {
-            var _a, _b;
-            if (err)
-                throw new Error(err);
-            if (cacheItem === null) {
-                var initCacheData = {
-                    lastUpdate: Date.now(),
-                    exchanges: (_a = {},
-                        _a["" + tick.exchange] = (_b = {},
-                            _b["" + tick.pair] = [
-                                {
-                                    openTimestamp: Math.floor(Date.now() / (1000 * 60 * 5)) * 1000 * 60 * 5,
-                                    volume: tick.volume,
-                                    high: tick.price,
-                                    low: tick.price,
-                                    open: tick.price,
-                                    close: tick.price,
-                                }
-                            ],
-                            _b),
-                        _a),
-                };
-                cache_1.cacheDb.set("stats:simple:" + tick.name, JSON.stringify(initCacheData), function (err, res) {
-                    if (err)
-                        throw new Error(err);
-                });
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
             }
-            else {
-                var newCacheItem = JSON.parse(cacheItem);
-                // Initialise the exhange and pair key/value pairs in case they have been erased or don't already exist
-                if (!newCacheItem.exchanges["" + tick.exchange])
-                    newCacheItem.exchanges["" + tick.exchange] = {};
-                if (!newCacheItem.exchanges["" + tick.exchange]["" + tick.pair])
-                    newCacheItem.exchanges["" + tick.exchange]["" + tick.pair] = [];
-                var lastPairCandle = newCacheItem.exchanges["" + tick.exchange]["" + tick.pair].slice(-1)[0];
-                var currentCandleOpenTimestamp = Math.floor(Date.now() / (1000 * 60 * 5)) * 1000 * 60 * 5;
-                // Check that the candle fits within the current candle timeframe, otherwise create a new candle
-                if (lastPairCandle && lastPairCandle.openTimestamp === currentCandleOpenTimestamp) {
-                    lastPairCandle.volume += tick.volume;
-                    lastPairCandle.close = tick.price;
-                    if (tick.price > lastPairCandle.high)
-                        lastPairCandle.high = tick.price;
-                    if (tick.price < lastPairCandle.low)
-                        lastPairCandle.low = tick.price;
-                }
-                else {
-                    //TODO: keep on pushing empty candles until the timestamp matches the current timestamp
-                    var newPairCandle = {
-                        openTimestamp: currentCandleOpenTimestamp,
-                        volume: tick.volume,
-                        high: tick.price,
-                        low: tick.price,
-                        open: tick.price,
-                        close: tick.price
-                    };
-                    newCacheItem.exchanges["" + tick.exchange]["" + tick.pair].push(newPairCandle);
-                }
-                // Check whether we should update the cache or the main db
-                if (Date.now() - newCacheItem.lastUpdate > 1000 * 10) {
-                    //TODO: Merge and append the cache data with the db data
-                    cache_1.cacheDb.set("stats:simple:" + tick.name, JSON.stringify({ lastUpdate: Date.now(), exchanges: {} }), function (err, res) {
-                        if (err)
-                            throw new Error(err);
-                    });
-                }
-                else {
-                    cache_1.cacheDb.set("stats:simple:" + tick.name, JSON.stringify(newCacheItem), function (err, res) {
-                        if (err)
-                            throw new Error(err);
-                    });
-                }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+var Database = require("../../database/database");
+var candles_1 = require("../../feeders/candles");
+var constants_1 = require("../../utils/constants");
+var _ = require("lodash");
+function start() {
+    var _this = this;
+    console.log('Starting SimpleStats');
+    candles_1.candles.subscribe({
+        name: "5min",
+        timeframe: constants_1.FIVE_MINUTES,
+        staleDuration: constants_1.FIVE_MINUTES * 2,
+    }, function (candleInfo) { return __awaiter(_this, void 0, void 0, function () {
+        var expiredCandles, name, candle, pair, candleCollectionName, statsCollection, stats, staleVolume, collection, list, _a, _b, _c;
+        var _d;
+        return __generator(this, function (_e) {
+            switch (_e.label) {
+                case 0:
+                    expiredCandles = candleInfo.expiredCandles, name = candleInfo.name, candle = candleInfo.candle, pair = candleInfo.pair, candleCollectionName = candleInfo.candleCollectionName;
+                    return [4 /*yield*/, Database.dbReference.statsDb.collection("stats:simple")];
+                case 1:
+                    statsCollection = _e.sent();
+                    return [4 /*yield*/, statsCollection.findOne({ name: name })];
+                case 2:
+                    stats = _e.sent();
+                    console.log(stats);
+                    stats.open = ((_d = _.last(_.sortBy(expiredCandles, "openTimestamp"))) === null || _d === void 0 ? void 0 : _d.close) || 0;
+                    staleVolume = expiredCandles.reduce(function (volume, candle) { return volume + candle.volume; }, 0);
+                    stats.volume += candle.volume;
+                    stats.volume -= staleVolume;
+                    stats.lastUpdate = Date.now();
+                    return [4 /*yield*/, Database.dbReference.candlesDb.collection(candleCollectionName)];
+                case 3:
+                    collection = _e.sent();
+                    return [4 /*yield*/, collection.find()];
+                case 4:
+                    list = _e.sent();
+                    _b = (_a = console).log;
+                    _c = ["all candles"];
+                    return [4 /*yield*/, list.toArray()];
+                case 5:
+                    _b.apply(_a, _c.concat([_e.sent()]));
+                    statsCollection.findOneAndUpdate({ _id: stats._id }, { $set: __assign({}, stats) });
+                    return [2 /*return*/];
             }
         });
-    });
+    }); });
 }
 exports.start = start;
