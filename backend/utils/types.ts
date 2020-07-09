@@ -1,3 +1,5 @@
+import { CandleSubscription } from "../feeders/candles";
+
 export interface Tick {
 	price: number,
 	volume: number,
@@ -24,3 +26,8 @@ export interface DateRange {
 	to: Timestamp,
 }
 
+export interface CoinConfig {
+	name: string,
+	symbol: string,
+	exchanges: { exchangeName: string, pairs: string[] }[],
+}

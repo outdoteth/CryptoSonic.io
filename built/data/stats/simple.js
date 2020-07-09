@@ -47,6 +47,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.start = void 0;
 var Database = require("../../database/database");
 var candles_1 = require("../../feeders/candles");
 var constants_1 = require("../../utils/constants");
@@ -54,40 +55,37 @@ var _ = require("lodash");
 function start() {
     var _this = this;
     console.log('Starting SimpleStats');
-    candles_1.candles.subscribe({
-        name: "5min",
+    candles_1.default.subscribe({
+        timeframeName: "5min",
         timeframe: constants_1.FIVE_MINUTES,
         staleDuration: constants_1.FIVE_MINUTES * 2,
     }, function (candleInfo) { return __awaiter(_this, void 0, void 0, function () {
-        var expiredCandles, name, candle, pair, candleCollectionName, statsCollection, stats, staleVolume, collection, list, _a, _b, _c;
-        var _d;
-        return __generator(this, function (_e) {
-            switch (_e.label) {
+        var candle, expiredCandles, name, candleCollectionName, statsCollection, stats, staleVolume, candleCollection, list;
+        var _a;
+        return __generator(this, function (_b) {
+            switch (_b.label) {
                 case 0:
-                    expiredCandles = candleInfo.expiredCandles, name = candleInfo.name, candle = candleInfo.candle, pair = candleInfo.pair, candleCollectionName = candleInfo.candleCollectionName;
+                    candle = candleInfo.candle, expiredCandles = candleInfo.expiredCandles, name = candleInfo.name, candleCollectionName = candleInfo.candleCollectionName;
                     return [4 /*yield*/, Database.dbReference.statsDb.collection("stats:simple")];
                 case 1:
-                    statsCollection = _e.sent();
+                    statsCollection = _b.sent();
                     return [4 /*yield*/, statsCollection.findOne({ name: name })];
                 case 2:
-                    stats = _e.sent();
-                    console.log(stats);
-                    stats.open = ((_d = _.last(_.sortBy(expiredCandles, "openTimestamp"))) === null || _d === void 0 ? void 0 : _d.close) || 0;
+                    stats = _b.sent();
+                    console.log("statsrstrstrst", stats);
+                    stats.open.daily = ((_a = _.last(_.sortBy(expiredCandles, "openTimestamp"))) === null || _a === void 0 ? void 0 : _a.close) || 0.0;
                     staleVolume = expiredCandles.reduce(function (volume, candle) { return volume + candle.volume; }, 0);
-                    stats.volume += candle.volume;
                     stats.volume -= staleVolume;
+                    stats.volume += candle.volume;
                     stats.lastUpdate = Date.now();
+                    console.log(stats);
                     return [4 /*yield*/, Database.dbReference.candlesDb.collection(candleCollectionName)];
                 case 3:
-                    collection = _e.sent();
-                    return [4 /*yield*/, collection.find()];
+                    candleCollection = _b.sent();
+                    return [4 /*yield*/, candleCollection.find()];
                 case 4:
-                    list = _e.sent();
-                    _b = (_a = console).log;
-                    _c = ["all candles"];
-                    return [4 /*yield*/, list.toArray()];
-                case 5:
-                    _b.apply(_a, _c.concat([_e.sent()]));
+                    list = _b.sent();
+                    console.log("candles", list);
                     statsCollection.findOneAndUpdate({ _id: stats._id }, { $set: __assign({}, stats) });
                     return [2 /*return*/];
             }

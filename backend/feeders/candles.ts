@@ -1,41 +1,32 @@
 import Events = require('../events/events');
 import { v4 as uuidv4 } from 'uuid';
 import Database = require('../database/database');
-import { Candle } from '../utils/types';
+import { Candle, Timestamp } from '../utils/types';
 import * as _ from 'lodash';
 import { cacheDb } from '../cache/cache';
+import * as Binance from "./binance";
 
-interface CandleSubscription {
-    name: string,
-    timeframe: number,
+export interface CandleSubscription {
+    timeframeName: string, 
     staleDuration: number,
+    timeframe?: number,
     callback?: any,
     id?: string,
 }
 
 class Candles {
     private candleSubscriptions: CandleSubscription[];
-    private mutexGuards: {}; // Use to make sure that we only atomically (maybe add in locking so we can wait for it?)
+    private mutexGuards: {}; // Make sure that we only atomically update db (maybe add in locking so we can wait for it and not have data loss?)
 
-    constructor(candleSubscriptions) {
-        this.candleSubscriptions = candleSubscriptions;
+    constructor() {
         this.mutexGuards = {};
-    }
-
-    initialise(candleSubscriptions) {
-        // Run through each coin and get their candles
-        for (const coin of candleSubscriptions) {
-            
-        }
-        // Create those coins candles in the db
-        // Allow subscriptions to each coins timeframe
-        // Loop through each of those timeframes and then call whoever has subscribed to each of them 
+        this.candleSubscriptions = [];
     }
 
     start() {
         console.log("Starting Candles");
         Events.on('NEW_TICK', tick => {
-            if (!this.mutexGuards[tick.name])  {
+            if (!this.mutexGuards[tick.name])  { // Data loss here is ok. We don't want to have a backlog and overflow the stack
                 this.mutexGuards[tick.name] = true;
 
                 cacheDb.get(`stats:simple:${tick.name}`, async (err, cacheItem) => {
@@ -46,7 +37,7 @@ class Candles {
                     if (!newCacheItem.exchanges[tick.exchange][tick.pair]) newCacheItem.exchanges[tick.exchange][tick.pair] = {};
 
                     for (const candleSubscription of this.candleSubscriptions) {
-                        const candle: Candle = newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.name]; 
+                        const candle: Candle = newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.timeframeName]; 
                         const currentCandleOpenTimestamp = Math.floor(Date.now() / candleSubscription.timeframe) * candleSubscription.timeframe;
 
                         if (candle && candle.openTimestamp === currentCandleOpenTimestamp ) {
@@ -63,18 +54,12 @@ class Candles {
                                 open: tick.price,
                                 close: tick.price
                             }
-                            newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.name] = newCandle;
+                            newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.id] = newCandle;
 
                             if (candle && candle.openTimestamp !== currentCandleOpenTimestamp) {
-                                const candleCollectionName = `${tick.name}:${tick.pair}:${candleSubscription.name}:${tick.exchange}`;
-
-                                const collections = await Database.dbReference.candlesDb.listCollections().toArray();
-                                const candlesCollectionExists = collections.find(({ name }) => name === candleCollectionName);
-                                if (!candlesCollectionExists) {
-                                    await Database.createCandlesCollection(candleCollectionName);
-                                }
-
+                                const candleCollectionName = `${tick.name}:${tick.pair}:${candleSubscription.id}:${tick.exchange}`;
                                 const candlesCollection = await Database.dbReference.candlesDb.collection(candleCollectionName);
+                                
                                 await candlesCollection.insertOne(_.cloneDeep(candle));
 
                                 // Remove any stale candles that are longer than a day from the latest candle
@@ -107,18 +92,28 @@ class Candles {
 
     /**
      * Subscribe to a given candle timeframe (will write candles to the given db and call the callback on new candle)
-     * @param subscription 
+     * @param {CandleSubscription} subscription 
      */
     subscribe(subscription: CandleSubscription, callback) {
-        // TODO: Add in logic so that we can do this
-        const exists = this.candleSubscriptions.some(({ name }) => name === subscription.name);
-        if (exists) throw new Error("Cannot create a timeframe that already exists");
-
         const id = uuidv4();
         this.candleSubscriptions.push({ ...subscription, id, callback });
 
-        return () => this.candleSubscriptions.filter(x => x.id !== id);
+        return () => this.candleSubscriptions = this.candleSubscriptions.filter(x => x.id !== id);
     }
 }
 
-export const candles = new Candles();
+/**
+ * Get the correct candle stream for a pair depending on the exchange that is passed in
+ * @param exchangeName 
+ * @param pair 
+ * @param candleTimeframe 
+ * @param startTime 
+ */
+export const getPastCandles = (exchangeName: string, pair: string, candleTimeframe: string, startTime: Timestamp) => {
+    switch (exchangeName) {
+        case "Binance":
+            return Binance.getPastCandles(pair, candleTimeframe, startTime);
+    }
+};
+
+export default new Candles();

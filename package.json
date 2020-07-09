@@ -4,12 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build-backend": "tsc --watch --resolveJsonModule",
+    "backend": "node ./built/main.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "binance-api-node": "^0.10.4",
     "lodash": "^4.17.15",
     "mongodb": "^3.5.5",
     "node-binance-api": "^0.10.6",

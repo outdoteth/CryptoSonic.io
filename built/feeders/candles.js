@@ -47,30 +47,26 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getPastCandles = void 0;
 var Events = require("../events/events");
 var uuid_1 = require("uuid");
 var Database = require("../database/database");
 var _ = require("lodash");
 var cache_1 = require("../cache/cache");
+var Binance = require("./binance");
 var Candles = /** @class */ (function () {
-    function Candles(candleSubscriptions) {
-        this.candleSubscriptions = candleSubscriptions;
+    function Candles() {
         this.mutexGuards = {};
+        this.candleSubscriptions = [];
     }
-    Candles.prototype.initialise = function (candleSubscriptions) {
-        // Run through each coin and get their candles
-        // Create those coins candles in the db
-        // Allow subscriptions to each coins timeframe
-        // Loop through each of those timeframes and then run the 
-    };
     Candles.prototype.start = function () {
         var _this = this;
         console.log("Starting Candles");
         Events.on('NEW_TICK', function (tick) {
-            if (!_this.mutexGuards[tick.name]) {
+            if (!_this.mutexGuards[tick.name]) { // Data loss here is ok. We don't want to have a backlog and overflow the stack
                 _this.mutexGuards[tick.name] = true;
                 cache_1.cacheDb.get("stats:simple:" + tick.name, function (err, cacheItem) { return __awaiter(_this, void 0, void 0, function () {
-                    var newCacheItem, _loop_1, _i, _a, candleSubscription;
+                    var newCacheItem, _i, _a, candleSubscription, candle, currentCandleOpenTimestamp, newCandle, candleCollectionName, candlesCollection, query, expiredCandles;
                     return __generator(this, function (_b) {
                         switch (_b.label) {
                             case 0:
@@ -81,85 +77,60 @@ var Candles = /** @class */ (function () {
                                     newCacheItem.exchanges[tick.exchange] = {};
                                 if (!newCacheItem.exchanges[tick.exchange][tick.pair])
                                     newCacheItem.exchanges[tick.exchange][tick.pair] = {};
-                                _loop_1 = function (candleSubscription) {
-                                    var candle, currentCandleOpenTimestamp, newCandle, candleCollectionName_1, collections, candlesCollectionExists, candlesCollection, query, expiredCandles;
-                                    return __generator(this, function (_a) {
-                                        switch (_a.label) {
-                                            case 0:
-                                                candle = newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.name];
-                                                currentCandleOpenTimestamp = Math.floor(Date.now() / candleSubscription.timeframe) * candleSubscription.timeframe;
-                                                if (!(candle && candle.openTimestamp === currentCandleOpenTimestamp)) return [3 /*break*/, 1];
-                                                candle.volume += tick.volume;
-                                                candle.close = tick.price;
-                                                if (tick.price > candle.high)
-                                                    candle.high = tick.price;
-                                                if (tick.price < candle.low)
-                                                    candle.low = tick.price;
-                                                return [3 /*break*/, 9];
-                                            case 1:
-                                                newCandle = {
-                                                    openTimestamp: currentCandleOpenTimestamp,
-                                                    volume: tick.volume,
-                                                    high: tick.price,
-                                                    low: tick.price,
-                                                    open: tick.price,
-                                                    close: tick.price
-                                                };
-                                                newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.name] = newCandle;
-                                                if (!(candle && candle.openTimestamp !== currentCandleOpenTimestamp)) return [3 /*break*/, 9];
-                                                candleCollectionName_1 = tick.name + ":" + tick.pair + ":" + candleSubscription.name + ":" + tick.exchange;
-                                                return [4 /*yield*/, Database.dbReference.candlesDb.listCollections().toArray()];
-                                            case 2:
-                                                collections = _a.sent();
-                                                candlesCollectionExists = collections.find(function (_a) {
-                                                    var name = _a.name;
-                                                    return name === candleCollectionName_1;
-                                                });
-                                                if (!!candlesCollectionExists) return [3 /*break*/, 4];
-                                                return [4 /*yield*/, Database.createCandlesCollection(candleCollectionName_1)];
-                                            case 3:
-                                                _a.sent();
-                                                _a.label = 4;
-                                            case 4: return [4 /*yield*/, Database.dbReference.candlesDb.collection(candleCollectionName_1)];
-                                            case 5:
-                                                candlesCollection = _a.sent();
-                                                return [4 /*yield*/, candlesCollection.insertOne(_.cloneDeep(candle))];
-                                            case 6:
-                                                _a.sent();
-                                                query = { openTimestamp: { "$lte": candle.openTimestamp - candleSubscription.staleDuration } };
-                                                return [4 /*yield*/, candlesCollection.find(query).toArray()];
-                                            case 7:
-                                                expiredCandles = _a.sent();
-                                                console.log("expired", expiredCandles);
-                                                return [4 /*yield*/, candlesCollection.deleteMany(query)];
-                                            case 8:
-                                                _a.sent();
-                                                candleSubscription.callback({
-                                                    expiredCandles: expiredCandles,
-                                                    candle: candle,
-                                                    candleCollectionName: candleCollectionName_1,
-                                                    exchange: tick.exchange,
-                                                    name: tick.name,
-                                                    pair: tick.pair
-                                                });
-                                                _a.label = 9;
-                                            case 9: return [2 /*return*/];
-                                        }
-                                    });
-                                };
                                 _i = 0, _a = this.candleSubscriptions;
                                 _b.label = 1;
                             case 1:
-                                if (!(_i < _a.length)) return [3 /*break*/, 4];
+                                if (!(_i < _a.length)) return [3 /*break*/, 8];
                                 candleSubscription = _a[_i];
-                                return [5 /*yield**/, _loop_1(candleSubscription)];
+                                candle = newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.timeframeName];
+                                currentCandleOpenTimestamp = Math.floor(Date.now() / candleSubscription.timeframe) * candleSubscription.timeframe;
+                                if (!(candle && candle.openTimestamp === currentCandleOpenTimestamp)) return [3 /*break*/, 2];
+                                candle.volume += tick.volume;
+                                candle.close = tick.price;
+                                if (tick.price > candle.high)
+                                    candle.high = tick.price;
+                                if (tick.price < candle.low)
+                                    candle.low = tick.price;
+                                return [3 /*break*/, 7];
                             case 2:
-                                _b.sent();
-                                _b.label = 3;
+                                newCandle = {
+                                    openTimestamp: currentCandleOpenTimestamp,
+                                    volume: tick.volume,
+                                    high: tick.price,
+                                    low: tick.price,
+                                    open: tick.price,
+                                    close: tick.price
+                                };
+                                newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.id] = newCandle;
+                                if (!(candle && candle.openTimestamp !== currentCandleOpenTimestamp)) return [3 /*break*/, 7];
+                                candleCollectionName = tick.name + ":" + tick.pair + ":" + candleSubscription.id + ":" + tick.exchange;
+                                return [4 /*yield*/, Database.dbReference.candlesDb.collection(candleCollectionName)];
                             case 3:
+                                candlesCollection = _b.sent();
+                                return [4 /*yield*/, candlesCollection.insertOne(_.cloneDeep(candle))];
+                            case 4:
+                                _b.sent();
+                                query = { openTimestamp: { "$lte": candle.openTimestamp - candleSubscription.staleDuration } };
+                                return [4 /*yield*/, candlesCollection.find(query).toArray()];
+                            case 5:
+                                expiredCandles = _b.sent();
+                                console.log("expired", expiredCandles);
+                                return [4 /*yield*/, candlesCollection.deleteMany(query)];
+                            case 6:
+                                _b.sent();
+                                candleSubscription.callback({
+                                    expiredCandles: expiredCandles,
+                                    candle: candle,
+                                    candleCollectionName: candleCollectionName,
+                                    exchange: tick.exchange,
+                                    name: tick.name,
+                                    pair: tick.pair
+                                });
+                                _b.label = 7;
+                            case 7:
                                 _i++;
                                 return [3 /*break*/, 1];
-                            case 4:
+                            case 8:
                                 cache_1.cacheDb.set("stats:simple:" + tick.name, JSON.stringify(newCacheItem), function (err, res) {
                                     if (err)
                                         throw new Error(err);
@@ -174,21 +145,27 @@ var Candles = /** @class */ (function () {
     };
     /**
      * Subscribe to a given candle timeframe (will write candles to the given db and call the callback on new candle)
-     * @param subscription
+     * @param {CandleSubscription} subscription
      */
     Candles.prototype.subscribe = function (subscription, callback) {
         var _this = this;
-        // TODO: Add in logic so that we can do this
-        var exists = this.candleSubscriptions.some(function (_a) {
-            var name = _a.name;
-            return name === subscription.name;
-        });
-        if (exists)
-            throw new Error("Cannot create a timeframe that already exists");
         var id = uuid_1.v4();
         this.candleSubscriptions.push(__assign(__assign({}, subscription), { id: id, callback: callback }));
-        return function () { return _this.candleSubscriptions.filter(function (x) { return x.id !== id; }); };
+        return function () { return _this.candleSubscriptions = _this.candleSubscriptions.filter(function (x) { return x.id !== id; }); };
     };
     return Candles;
 }());
-exports.candles = new Candles();
+/**
+ * Get the correct candle stream for a pair depending on the exchange that is passed in
+ * @param exchangeName
+ * @param pair
+ * @param candleTimeframe
+ * @param startTime
+ */
+exports.getPastCandles = function (exchangeName, pair, candleTimeframe, startTime) {
+    switch (exchangeName) {
+        case "Binance":
+            return Binance.getPastCandles(pair, candleTimeframe, startTime);
+    }
+};
+exports.default = new Candles();

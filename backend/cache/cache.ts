@@ -8,7 +8,3 @@ export function start() {
 	});
 }
 
-function hello () {
-
-
-

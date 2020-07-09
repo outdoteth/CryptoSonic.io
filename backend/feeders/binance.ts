@@ -1,36 +1,87 @@
-import Binance = require('node-binance-api');
+import Binance, { CandleChartInterval } from "binance-api-node";
 import * as typeUtils from '../utils/types';
 import Events = require('../events/events');
+import * as _ from "lodash";
+import { stringToTimeframe } from "../utils/constants";
+import { sleep } from "../utils/helpers";
 
-const binance = new Binance();
+const binance =  Binance();
 
-export function start(coins: [string], pairToNameMap) {
+export function start(coins: typeUtils.CoinConfig[]) {
 	console.log("Starting Binance Feeder");
 
+	// Go through all coins and extract their Binance pairs
+	const binancePairs = coins.map(({ exchanges, name }) => {
+		const pairs = exchanges.find(({ exchangeName }) => exchangeName === "Binance")?.pairs; 
+		return pairs && { pairs, name };
+	}).filter(item => item);
+
+	// For each pair map it to the coins name
+	const pairToNameMap = binancePairs.reduce(($map, coin) => {
+		coin.pairs.forEach(pair => $map[pair] = coin.name);
+		return $map;
+	}, {});
+
 	// Listen to all possible trades for each coin
-	binance.websockets.trades(coins, trades => {
-		const {E:eventTime, s:symbol, p:price, q:quantity, m:maker} = trades;
+	const rawPairs = binancePairs.reduce(($arr, coin) => $arr.concat(coin.pairs), []);
+	binance.ws.trades(rawPairs, trades => {
+		console.log(trades)
 
-		const parsedTick: typeUtils.Tick = {
-			price: parseFloat(price),
-			volume: parseFloat(quantity),
-			exchange: "Binance",
-			isBuy: maker,	
-			timestamp: eventTime,
-			pair: symbol,
-			name: pairToNameMap[symbol], // We only get the symbol from binance so need to map to a name
-		};
+		// const parsedTick: typeUtils.Tick = {
+		// 	price: parseFloat(price),
+		// 	volume: parseFloat(quantity),
+		// 	exchange: "Binance",
+		// 	isBuy: maker,	
+		// 	timestamp: eventTime,
+		// 	pair: symbol,
+		// 	name: pairToNameMap[symbol],
+		// };
 
-		Events.emit('NEW_TICK', parsedTick);
+		// Events.emit('NEW_TICK', parsedTick);
 	});
 }
 
-export function getCandlesRange(coin, candleTimeframe: number, dateRange: typeUtils.Timestamp) {
-	// Get ticks for that coin and aggregate into a candle of the given timeframe
+/**
+ * Get the past candles for a given coin from the startTime
+ * @param coin 
+ * @param candleTimeframe 
+ * @param startTime 
+ * 
+ * @returns {*} - A stream takes a callback which we pass the candles into
+ */
+export function getPastCandles(pair: string, candleTimeframe: string, startTime: typeUtils.Timestamp, endTime?: typeUtils.Timestamp) {
+	const streamers = [];
 
-	// Create stream
+	(async () => {
+		let gotAllCandles = false;
+		while (!gotAllCandles) {
+			const rawCandles = await binance.candles({ symbol: pair, interval: candleTimeframe as CandleChartInterval, limit: 500, startTime });
+			
+			const formattedCandles = rawCandles.map(({ openTime: openTimestamp, open, high, low, close, volume }) => {
+				const Candle: typeUtils.Candle = {
+					openTimestamp,
+					open: +open,
+					high: +high,
+					low: +low,
+					close: +close,
+					volume: +volume,
+				};
+				
+				return Candle;
+			});
 
-	// Pull ticks aggregate into candle, push into stream
-	
-	// Return stream
+			gotAllCandles = rawCandles.length === 0 || startTime >= endTime;
+			startTime = _.last(rawCandles)?.openTime + stringToTimeframe[candleTimeframe];
+
+			if (!gotAllCandles && rawCandles.length === 0) 
+				throw new Error("Got zero candles even though we have not got all candles yet")
+
+			streamers.forEach(streamer => streamer(_.cloneDeep(formattedCandles), gotAllCandles));
+			await sleep(4000);
+		}
+	})();
+
+	return {
+		stream: $func => streamers.push($func)
+	}
 }

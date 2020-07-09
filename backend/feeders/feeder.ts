@@ -1,17 +1,12 @@
 import BinanceFeeder = require("./binance");
-import { candles } from "./candles";
-
-// This should be fetched from a centralised config file and placed directly into the BinanceFeeder
-const pairToNameMap = {
-	"ETHBTC": "Ethereum"
-};
+import Candles from "./candles";
 
 class Feeder {
-	start() {
+	start(coins) {
 		console.log('Starting Feeders...');
 		
-		BinanceFeeder.start(["ETHBTC"], pairToNameMap); // This should be started with a single config containing all info
-		candles.start();
+		BinanceFeeder.start(coins); // This should be started with a single config containing all info
+		Candles.start();
 	}
 }	
 

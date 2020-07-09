@@ -2,8 +2,10 @@
     "coins": [
         {
             "name": "Ethereum",
-            "symbol": "ETH"
+            "symbol": "ETH",
+            "exchanges": [
+                { "exchangeName": "Binance", "pairs": ["ETHBTC"] }
+            ]
         }
-    ]
-    
+    ]   
 }

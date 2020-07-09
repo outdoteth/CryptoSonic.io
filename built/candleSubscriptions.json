@@ -1,0 +1,8 @@
+{
+    "candleSubscriptions": [
+        {
+            "timeframeName": "15m",
+            "staleDuration": "1d"
+        }
+    ]
+}
