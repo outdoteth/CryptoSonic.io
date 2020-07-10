@@ -50,10 +50,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getPastCandles = void 0;
 var Events = require("../events/events");
 var uuid_1 = require("uuid");
-var Database = require("../database/database");
 var _ = require("lodash");
 var cache_1 = require("../cache/cache");
 var Binance = require("./binance");
+var constants_1 = require("../utils/constants");
 var Candles = /** @class */ (function () {
     function Candles() {
         this.mutexGuards = {};
@@ -62,86 +62,87 @@ var Candles = /** @class */ (function () {
     Candles.prototype.start = function () {
         var _this = this;
         console.log("Starting Candles");
-        Events.on('NEW_TICK', function (tick) {
-            if (!_this.mutexGuards[tick.name]) { // Data loss here is ok. We don't want to have a backlog and overflow the stack
-                _this.mutexGuards[tick.name] = true;
-                cache_1.cacheDb.get("stats:simple:" + tick.name, function (err, cacheItem) { return __awaiter(_this, void 0, void 0, function () {
-                    var newCacheItem, _i, _a, candleSubscription, candle, currentCandleOpenTimestamp, newCandle, candleCollectionName, candlesCollection, query, expiredCandles;
-                    return __generator(this, function (_b) {
-                        switch (_b.label) {
-                            case 0:
+        Events.on('NEW_TICK', function (tick) { return __awaiter(_this, void 0, void 0, function () {
+            var newCandle;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0: return [4 /*yield*/, this.buildCandle(tick)];
+                    case 1:
+                        newCandle = _a.sent();
+                        console.log(newCandle);
+                        return [2 /*return*/];
+                }
+            });
+        }); });
+    };
+    // Build a 5 min candle using redis as a cache to maintain the state
+    Candles.prototype.buildCandle = function (tick) {
+        var _this = this;
+        return new Promise(function (resolve) {
+            var cacheName = "buildCandle:" + tick.name + ":" + tick.exchange + ":" + tick.pair;
+            if (!_this.mutexGuards[cacheName]) { // Data loss here is ok. We don't want to have a backlog and overflow the stack
+                _this.mutexGuards[cacheName] = true;
+                cache_1.cacheDb.get(cacheName, function (err, cacheItem) { return __awaiter(_this, void 0, void 0, function () {
+                    var isNewCandle, existingCandle, currentCandleOpenTimestamp, newCandle;
+                    return __generator(this, function (_a) {
+                        if (err)
+                            throw new Error(err);
+                        isNewCandle = false;
+                        existingCandle = _.cloneDeep(JSON.parse(cacheItem));
+                        currentCandleOpenTimestamp = Math.floor(Date.now() / constants_1.FIVE_MINUTES) * constants_1.FIVE_MINUTES;
+                        if ((existingCandle === null || existingCandle === void 0 ? void 0 : existingCandle.openTimestamp) === currentCandleOpenTimestamp) {
+                            existingCandle.volume += tick.volume;
+                            existingCandle.high = tick.price > existingCandle.high ? tick.price : existingCandle.high;
+                            existingCandle.low = tick.price < existingCandle.low ? tick.price : existingCandle.low;
+                            existingCandle.close = tick.price;
+                            cache_1.cacheDb.set(cacheName, JSON.stringify(existingCandle), function (err, res) {
                                 if (err)
                                     throw new Error(err);
-                                newCacheItem = JSON.parse(cacheItem) || { exchanges: {} };
-                                if (!newCacheItem.exchanges[tick.exchange])
-                                    newCacheItem.exchanges[tick.exchange] = {};
-                                if (!newCacheItem.exchanges[tick.exchange][tick.pair])
-                                    newCacheItem.exchanges[tick.exchange][tick.pair] = {};
-                                _i = 0, _a = this.candleSubscriptions;
-                                _b.label = 1;
-                            case 1:
-                                if (!(_i < _a.length)) return [3 /*break*/, 8];
-                                candleSubscription = _a[_i];
-                                candle = newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.timeframeName];
-                                currentCandleOpenTimestamp = Math.floor(Date.now() / candleSubscription.timeframe) * candleSubscription.timeframe;
-                                if (!(candle && candle.openTimestamp === currentCandleOpenTimestamp)) return [3 /*break*/, 2];
-                                candle.volume += tick.volume;
-                                candle.close = tick.price;
-                                if (tick.price > candle.high)
-                                    candle.high = tick.price;
-                                if (tick.price < candle.low)
-                                    candle.low = tick.price;
-                                return [3 /*break*/, 7];
-                            case 2:
-                                newCandle = {
-                                    openTimestamp: currentCandleOpenTimestamp,
-                                    volume: tick.volume,
-                                    high: tick.price,
-                                    low: tick.price,
-                                    open: tick.price,
-                                    close: tick.price
-                                };
-                                newCacheItem.exchanges[tick.exchange][tick.pair][candleSubscription.id] = newCandle;
-                                if (!(candle && candle.openTimestamp !== currentCandleOpenTimestamp)) return [3 /*break*/, 7];
-                                candleCollectionName = tick.name + ":" + tick.pair + ":" + candleSubscription.id + ":" + tick.exchange;
-                                return [4 /*yield*/, Database.dbReference.candlesDb.collection(candleCollectionName)];
-                            case 3:
-                                candlesCollection = _b.sent();
-                                return [4 /*yield*/, candlesCollection.insertOne(_.cloneDeep(candle))];
-                            case 4:
-                                _b.sent();
-                                query = { openTimestamp: { "$lte": candle.openTimestamp - candleSubscription.staleDuration } };
-                                return [4 /*yield*/, candlesCollection.find(query).toArray()];
-                            case 5:
-                                expiredCandles = _b.sent();
-                                console.log("expired", expiredCandles);
-                                return [4 /*yield*/, candlesCollection.deleteMany(query)];
-                            case 6:
-                                _b.sent();
-                                candleSubscription.callback({
-                                    expiredCandles: expiredCandles,
-                                    candle: candle,
-                                    candleCollectionName: candleCollectionName,
-                                    exchange: tick.exchange,
-                                    name: tick.name,
-                                    pair: tick.pair
-                                });
-                                _b.label = 7;
-                            case 7:
-                                _i++;
-                                return [3 /*break*/, 1];
-                            case 8:
-                                cache_1.cacheDb.set("stats:simple:" + tick.name, JSON.stringify(newCacheItem), function (err, res) {
-                                    if (err)
-                                        throw new Error(err);
-                                });
-                                this.mutexGuards[tick.name] = false;
-                                return [2 /*return*/];
+                            });
                         }
+                        else {
+                            newCandle = {
+                                high: tick.price,
+                                low: tick.price,
+                                open: tick.price,
+                                close: tick.price,
+                                openTimestamp: currentCandleOpenTimestamp,
+                                volume: tick.volume,
+                            };
+                            isNewCandle = true;
+                            cache_1.cacheDb.set(cacheName, JSON.stringify(newCandle), function (err, res) {
+                                if (err)
+                                    throw new Error(err);
+                            });
+                        }
+                        this.mutexGuards[cacheName] = false;
+                        return [2 /*return*/, resolve({ candle: existingCandle, isNewCandle: isNewCandle })]; // resolve() previously generated candle now that it has passed the timerange
                     });
                 }); });
             }
         });
+    };
+    Candles.prototype.handleNewCandle = function (candle) {
+        // For each subscription
+        // Get the last candle
+        // If the new candle openTimestamp.floor(timeframe) is equal then edit and update latest candle in db
+        // Else insert a new candle and emit an event for that subscription
+        // const candleCollectionName = `${tick.name}:${tick.pair}:${candleSubscription.id}:${tick.exchange}`;
+        // const candlesCollection = await Database.dbReference.candlesDb.collection(candleCollectionName);
+        // await candlesCollection.insertOne(_.cloneDeep(candle));
+        // // Remove any stale candles that are longer than a day from the latest candle
+        // const query = { openTimestamp: { "$lte":  candle.openTimestamp - candleSubscription.staleDuration }};
+        // const expiredCandles = await candlesCollection.find(query).toArray();
+        // console.log("expired", expiredCandles)
+        // await candlesCollection.deleteMany(query);
+        // candleSubscription.callback({
+        //     expiredCandles, 
+        //     candle, 
+        //     candleCollectionName,
+        //     exchange: tick.exchange,
+        //     name: tick.name,
+        //     pair: tick.pair  
+        // });
     };
     /**
      * Subscribe to a given candle timeframe (will write candles to the given db and call the callback on new candle)

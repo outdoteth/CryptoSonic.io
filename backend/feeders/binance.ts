@@ -25,7 +25,6 @@ export function start(coins: typeUtils.CoinConfig[]) {
 	// Listen to all possible trades for each coin
 	const rawPairs = binancePairs.reduce(($arr, coin) => $arr.concat(coin.pairs), []);
 	binance.ws.trades(rawPairs, ({ price, quantity, maker, eventTime, symbol, }) => {
-
 		const parsedTick: typeUtils.Tick = {
 			price: parseFloat(price),
 			volume: parseFloat(quantity),

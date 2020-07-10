@@ -1,4 +1,4 @@
-export const FIVE_MINUTES = 10 * 1000; 
+export const FIVE_MINUTES = 5 * 60 * 1000; 
 export const FIFTEEN_MINUTES = FIVE_MINUTES * 3;
 export const DAY = 24 * 60 * 60 * 1000;
 
