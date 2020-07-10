@@ -109,10 +109,10 @@ class Candles {
  * @param candleTimeframe 
  * @param startTime 
  */
-export const getPastCandles = (exchangeName: string, pair: string, candleTimeframe: string, startTime: Timestamp) => {
+export const getPastCandles = (exchangeName: string, pair: string, candleTimeframe: string, startTime: Timestamp, callback) => {
     switch (exchangeName) {
         case "Binance":
-            return Binance.getPastCandles(pair, candleTimeframe, startTime);
+            return Binance.getPastCandles(pair, candleTimeframe, startTime, callback);
     }
 };
 

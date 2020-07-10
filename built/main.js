@@ -47,6 +47,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+var Feeder = require("./feeders/feeder");
 var Database = require("./database/database");
 var coins_json_1 = require("./coins.json");
 var candleSubscriptions_json_1 = require("./candleSubscriptions.json");
@@ -61,6 +62,7 @@ function main() {
                     return [4 /*yield*/, Database.start(coins_json_1.coins, CANDLE_SUBSCRIPTIONS)];
                 case 1:
                     _a.sent();
+                    Feeder.start(coins_json_1.coins);
                     return [2 /*return*/];
             }
         });

@@ -162,10 +162,10 @@ var Candles = /** @class */ (function () {
  * @param candleTimeframe
  * @param startTime
  */
-exports.getPastCandles = function (exchangeName, pair, candleTimeframe, startTime) {
+exports.getPastCandles = function (exchangeName, pair, candleTimeframe, startTime, callback) {
     switch (exchangeName) {
         case "Binance":
-            return Binance.getPastCandles(pair, candleTimeframe, startTime);
+            return Binance.getPastCandles(pair, candleTimeframe, startTime, callback);
     }
 };
 exports.default = new Candles();

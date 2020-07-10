@@ -10,6 +10,6 @@ exports.sleep = function (duration) {
     });
 };
 // @ts-ignore
-Array.prototype.last = function ($arr) { return _.cloneDeep($arr[$arr.length - 1]); };
+Array.prototype.last = function () { return _.cloneDeep(this[this.length - 1]); };
 // @ts-ignore
-Array.prototype.first = function ($arr) { return _.cloneDeep($arr[0]); };
+Array.prototype.first = function () { return _.cloneDeep(this[0]); };

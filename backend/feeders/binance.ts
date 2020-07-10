@@ -24,20 +24,19 @@ export function start(coins: typeUtils.CoinConfig[]) {
 
 	// Listen to all possible trades for each coin
 	const rawPairs = binancePairs.reduce(($arr, coin) => $arr.concat(coin.pairs), []);
-	binance.ws.trades(rawPairs, trades => {
-		console.log(trades)
+	binance.ws.trades(rawPairs, ({ price, quantity, maker, eventTime, symbol, }) => {
 
-		// const parsedTick: typeUtils.Tick = {
-		// 	price: parseFloat(price),
-		// 	volume: parseFloat(quantity),
-		// 	exchange: "Binance",
-		// 	isBuy: maker,	
-		// 	timestamp: eventTime,
-		// 	pair: symbol,
-		// 	name: pairToNameMap[symbol],
-		// };
+		const parsedTick: typeUtils.Tick = {
+			price: parseFloat(price),
+			volume: parseFloat(quantity),
+			exchange: "Binance",
+			isBuy: maker,	
+			timestamp: eventTime,
+			pair: symbol,
+			name: pairToNameMap[symbol],
+		};
 
-		// Events.emit('NEW_TICK', parsedTick);
+		Events.emit('NEW_TICK', parsedTick);
 	});
 }
 
@@ -49,39 +48,33 @@ export function start(coins: typeUtils.CoinConfig[]) {
  * 
  * @returns {*} - A stream takes a callback which we pass the candles into
  */
-export function getPastCandles(pair: string, candleTimeframe: string, startTime: typeUtils.Timestamp, endTime?: typeUtils.Timestamp) {
-	const streamers = [];
-
-	(async () => {
-		let gotAllCandles = false;
-		while (!gotAllCandles) {
-			const rawCandles = await binance.candles({ symbol: pair, interval: candleTimeframe as CandleChartInterval, limit: 500, startTime });
+export async function getPastCandles(pair: string, candleTimeframe: string, startTime: typeUtils.Timestamp, callback, endTime?: typeUtils.Timestamp) {
+	let gotAllCandles = false;
+	let candlesCount = 0;
+	while (!gotAllCandles) {
+		const rawCandles = await binance.candles({ symbol: pair, interval: candleTimeframe as CandleChartInterval, limit: 500, startTime });
+		
+		const formattedCandles = rawCandles.map(({ openTime: openTimestamp, open, high, low, close, volume }) => {
+			const Candle: typeUtils.Candle = {
+				openTimestamp,
+				open: +open,
+				high: +high,
+				low: +low,
+				close: +close,
+				volume: +volume,
+			};
 			
-			const formattedCandles = rawCandles.map(({ openTime: openTimestamp, open, high, low, close, volume }) => {
-				const Candle: typeUtils.Candle = {
-					openTimestamp,
-					open: +open,
-					high: +high,
-					low: +low,
-					close: +close,
-					volume: +volume,
-				};
-				
-				return Candle;
-			});
+			return Candle;
+		});
 
-			gotAllCandles = rawCandles.length === 0 || startTime >= endTime;
-			startTime = _.last(rawCandles)?.openTime + stringToTimeframe[candleTimeframe];
+		candlesCount += formattedCandles.length;
+		gotAllCandles = rawCandles.length === 0 || startTime >= endTime;
+		startTime = _.last(rawCandles)?.openTime + stringToTimeframe[candleTimeframe];
 
-			if (!gotAllCandles && rawCandles.length === 0) 
-				throw new Error("Got zero candles even though we have not got all candles yet")
+		if (!gotAllCandles && rawCandles.length === 0) 
+			throw new Error("Got zero candles even though we have not got all candles yet")
 
-			streamers.forEach(streamer => streamer(_.cloneDeep(formattedCandles), gotAllCandles));
-			await sleep(4000);
-		}
-	})();
-
-	return {
-		stream: $func => streamers.push($func)
+		callback(_.cloneDeep(formattedCandles), { done: gotAllCandles, candlesCount });
+		await sleep(4000);
 	}
 }

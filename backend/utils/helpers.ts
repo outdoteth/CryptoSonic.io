@@ -8,9 +8,15 @@ export const sleep = duration => {
     });  
 }
 
+declare global {
+    interface Array<T> {
+        last(this: T[]): T;
+        first(this: T[]): T;
+    }
+}
 
 // @ts-ignore
-Array.prototype.last = $arr => _.cloneDeep($arr[$arr.length - 1]);
+Array.prototype.last = function() { return _.cloneDeep(this[this.length - 1]); };
 
 // @ts-ignore
-Array.prototype.first = $arr => _.cloneDeep($arr[0]);
+Array.prototype.first = function() { return _.cloneDeep(this[0]); };

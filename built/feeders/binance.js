@@ -38,6 +38,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getPastCandles = exports.start = void 0;
 var binance_api_node_1 = require("binance-api-node");
+var Events = require("../events/events");
 var _ = require("lodash");
 var constants_1 = require("../utils/constants");
 var helpers_1 = require("../utils/helpers");
@@ -61,18 +62,18 @@ function start(coins) {
     }, {});
     // Listen to all possible trades for each coin
     var rawPairs = binancePairs.reduce(function ($arr, coin) { return $arr.concat(coin.pairs); }, []);
-    binance.ws.trades(rawPairs, function (trades) {
-        console.log(trades);
-        // const parsedTick: typeUtils.Tick = {
-        // 	price: parseFloat(price),
-        // 	volume: parseFloat(quantity),
-        // 	exchange: "Binance",
-        // 	isBuy: maker,	
-        // 	timestamp: eventTime,
-        // 	pair: symbol,
-        // 	name: pairToNameMap[symbol],
-        // };
-        // Events.emit('NEW_TICK', parsedTick);
+    binance.ws.trades(rawPairs, function (_a) {
+        var price = _a.price, quantity = _a.quantity, maker = _a.maker, eventTime = _a.eventTime, symbol = _a.symbol;
+        var parsedTick = {
+            price: parseFloat(price),
+            volume: parseFloat(quantity),
+            exchange: "Binance",
+            isBuy: maker,
+            timestamp: eventTime,
+            pair: symbol,
+            name: pairToNameMap[symbol],
+        };
+        Events.emit('NEW_TICK', parsedTick);
     });
 }
 exports.start = start;
@@ -84,60 +85,46 @@ exports.start = start;
  *
  * @returns {*} - A stream takes a callback which we pass the candles into
  */
-function getPastCandles(pair, candleTimeframe, startTime, endTime) {
-    var _this = this;
-    var streamers = [];
-    (function () { return __awaiter(_this, void 0, void 0, function () {
-        var gotAllCandles, _loop_1;
-        var _a;
+function getPastCandles(pair, candleTimeframe, startTime, callback, endTime) {
+    var _a;
+    return __awaiter(this, void 0, void 0, function () {
+        var gotAllCandles, candlesCount, rawCandles, formattedCandles;
         return __generator(this, function (_b) {
             switch (_b.label) {
                 case 0:
                     gotAllCandles = false;
-                    _loop_1 = function () {
-                        var rawCandles, formattedCandles;
-                        return __generator(this, function (_a) {
-                            switch (_a.label) {
-                                case 0: return [4 /*yield*/, binance.candles({ symbol: pair, interval: candleTimeframe, limit: 500, startTime: startTime })];
-                                case 1:
-                                    rawCandles = _a.sent();
-                                    formattedCandles = rawCandles.map(function (_a) {
-                                        var openTimestamp = _a.openTime, open = _a.open, high = _a.high, low = _a.low, close = _a.close, volume = _a.volume;
-                                        var Candle = {
-                                            openTimestamp: openTimestamp,
-                                            open: +open,
-                                            high: +high,
-                                            low: +low,
-                                            close: +close,
-                                            volume: +volume,
-                                        };
-                                        return Candle;
-                                    });
-                                    gotAllCandles = rawCandles.length === 0 || startTime >= endTime;
-                                    startTime = ((_a = _.last(rawCandles)) === null || _a === void 0 ? void 0 : _a.openTime) + constants_1.stringToTimeframe[candleTimeframe];
-                                    if (!gotAllCandles && rawCandles.length === 0)
-                                        throw new Error("Got zero candles even though we have not got all candles yet");
-                                    streamers.forEach(function (streamer) { return streamer(_.cloneDeep(formattedCandles), gotAllCandles); });
-                                    return [4 /*yield*/, helpers_1.sleep(4000)];
-                                case 2:
-                                    _a.sent();
-                                    return [2 /*return*/];
-                            }
-                        });
-                    };
+                    candlesCount = 0;
                     _b.label = 1;
                 case 1:
-                    if (!!gotAllCandles) return [3 /*break*/, 3];
-                    return [5 /*yield**/, _loop_1()];
+                    if (!!gotAllCandles) return [3 /*break*/, 4];
+                    return [4 /*yield*/, binance.candles({ symbol: pair, interval: candleTimeframe, limit: 500, startTime: startTime })];
                 case 2:
+                    rawCandles = _b.sent();
+                    formattedCandles = rawCandles.map(function (_a) {
+                        var openTimestamp = _a.openTime, open = _a.open, high = _a.high, low = _a.low, close = _a.close, volume = _a.volume;
+                        var Candle = {
+                            openTimestamp: openTimestamp,
+                            open: +open,
+                            high: +high,
+                            low: +low,
+                            close: +close,
+                            volume: +volume,
+                        };
+                        return Candle;
+                    });
+                    candlesCount += formattedCandles.length;
+                    gotAllCandles = rawCandles.length === 0 || startTime >= endTime;
+                    startTime = ((_a = _.last(rawCandles)) === null || _a === void 0 ? void 0 : _a.openTime) + constants_1.stringToTimeframe[candleTimeframe];
+                    if (!gotAllCandles && rawCandles.length === 0)
+                        throw new Error("Got zero candles even though we have not got all candles yet");
+                    callback(_.cloneDeep(formattedCandles), { done: gotAllCandles, candlesCount: candlesCount });
+                    return [4 /*yield*/, helpers_1.sleep(4000)];
+                case 3:
                     _b.sent();
                     return [3 /*break*/, 1];
-                case 3: return [2 /*return*/];
+                case 4: return [2 /*return*/];
             }
         });
-    }); })();
-    return {
-        stream: function ($func) { return streamers.push($func); }
-    };
+    });
 }
 exports.getPastCandles = getPastCandles;
