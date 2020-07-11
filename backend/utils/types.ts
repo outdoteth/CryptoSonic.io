@@ -8,6 +8,7 @@ export interface Tick {
 	timestamp: number,
 	pair: string,
 	name: string,
+	symbol: string,
 }
 
 export interface Candle {

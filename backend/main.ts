@@ -16,9 +16,9 @@ async function main() {
 	console.log('Initialising project...\n');
 
 	await Database.start(COINS_LIST, CANDLE_SUBSCRIPTIONS);
-	Feeder.start(COINS_LIST);
-	//Data.start();
-	//Cache.start();
+	Feeder.start(COINS_LIST, CANDLE_SUBSCRIPTIONS);
+	Data.start();
+	Cache.start();
 }
 
 main();

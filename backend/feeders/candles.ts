@@ -24,11 +24,15 @@ class Candles {
         this.candleSubscriptions = [];
     }
 
-    start() {
+    start(candleSubscriptions: CandleSubscription[]) {
         console.log("Starting Candles");
-        Events.on('NEW_TICK', async tick => {
-            const newCandle = await this.buildCandle(tick);
-            console.log(newCandle);
+        this.candleSubscriptions = candleSubscriptions;
+
+        Events.on('NEW_TICK', async (tick: Tick) => {
+            const cacheRes: any = await this.buildCandle(tick);
+            if (cacheRes.isNewCandle) {
+                this.handleNewCandle(cacheRes.candle, tick);
+            }
         });
     }
 
@@ -46,8 +50,8 @@ class Candles {
                     const currentCandleOpenTimestamp = Math.floor(Date.now() / FIVE_MINUTES) * FIVE_MINUTES;
                     if (existingCandle?.openTimestamp === currentCandleOpenTimestamp) {
                         existingCandle.volume += tick.volume;
-                        existingCandle.high = tick.price > existingCandle.high ? tick.price : existingCandle.high;
-                        existingCandle.low = tick.price < existingCandle.low ? tick.price : existingCandle.low;
+                        existingCandle.high = Math.max(existingCandle.high, tick.price);
+                        existingCandle.low = Math.min(existingCandle.low, tick.price);
                         existingCandle.close = tick.price;                
     
                         cacheDb.set(cacheName, JSON.stringify(existingCandle), (err, res) => {
@@ -77,31 +81,47 @@ class Candles {
         });
     }
 
-    handleNewCandle(candle: Candle) {
-        // For each subscription
-        // Get the last candle
-        // If the new candle openTimestamp.floor(timeframe) is equal then edit and update latest candle in db
-        // Else insert a new candle and emit an event for that subscription
+    handleNewCandle(candle: Candle, tick: Tick) {
+        const { pair, name, exchange, symbol } = tick;
+        const promises = this.candleSubscriptions.map(async subscription => {
+            const candleCollName = `${name}:${pair}:${subscription.timeframeName}:${subscription.staleDuration}:${exchange}`;
+            const candleColl = await Database.dbReference.candlesDb.collection(candleCollName);
 
-        // const candleCollectionName = `${tick.name}:${tick.pair}:${candleSubscription.id}:${tick.exchange}`;
-        // const candlesCollection = await Database.dbReference.candlesDb.collection(candleCollectionName);
-        
-        // await candlesCollection.insertOne(_.cloneDeep(candle));
+            const lastCandle = (await candleColl.find().sort({ openTimestamp: -1 }).limit(1).toArray()).last();
+            const candleOpenTimestamp = Math.floor(candle.openTimestamp / subscription.timeframe) * subscription.timeframe;
+            if (candleOpenTimestamp === lastCandle?.openTimestamp) {
+                await candleColl.updateOne({ ...lastCandle }, {
+                    "$set": {
+                        high: Math.max(lastCandle.high, candle.high),
+                        low: Math.min(lastCandle.low, candle.low),
+                        close: candle.close,
+                        volume: lastCandle.volume + candle.volume,
+                    }
+                });
+            } else {
+                const newCandle = {
+                    ...candle,
+                    openTimestamp: candleOpenTimestamp,
+                };
+                await candleColl.insertOne(newCandle);  
+                
+                const deleteQuery = { openTimestamp: { "$lte":  candle.openTimestamp - subscription.staleDuration }};
+                const expiredCandles = await candleColl.find(deleteQuery).toArray();
+                await candleColl.deleteMany(deleteQuery);
 
-        // // Remove any stale candles that are longer than a day from the latest candle
-        // const query = { openTimestamp: { "$lte":  candle.openTimestamp - candleSubscription.staleDuration }};
-        // const expiredCandles = await candlesCollection.find(query).toArray();
-        // console.log("expired", expiredCandles)
-        // await candlesCollection.deleteMany(query);
+                Events.emit(`NEW_CANDLE:${subscription.timeframeName}:${subscription.staleDuration}`, {
+                    candle: lastCandle,
+                    expiredCandles,
+                    candleCollName,
+                    pair,
+                    name,
+                    symbol,
+                    exchange
+                });
+            }
+        });
 
-        // candleSubscription.callback({
-        //     expiredCandles, 
-        //     candle, 
-        //     candleCollectionName,
-        //     exchange: tick.exchange,
-        //     name: tick.name,
-        //     pair: tick.pair  
-        // });
+        return Promise.all(promises);
     }
 
     /**

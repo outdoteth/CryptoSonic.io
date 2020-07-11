@@ -3,43 +3,56 @@ import Database = require('../../database/database');
 import {cacheDb} from '../../cache/cache';
 import {Candle} from '../../utils/types';
 import Candles from "../../feeders/candles";
-import { FIVE_MINUTES, DAY } from '../../utils/constants';
+import { FIVE_MINUTES, DAY, stringToTimeframe } from '../../utils/constants';
 import * as _ from 'lodash';
 
 export function start() {
 	console.log('Starting SimpleStats');
 
-	Candles.subscribe({
-		timeframeName: "5min",
-		timeframe: FIVE_MINUTES,
-		staleDuration: FIVE_MINUTES * 2,
-	}, async candleInfo => {
-		const { candle, expiredCandles, name, candleCollectionName } = candleInfo;
+	const timeframe = "15m";
+	const staleDuration = DAY;
+	Events.on(`NEW_CANDLE:${timeframe}:${DAY}`, async candleInfo => {
+		const {
+			name,
+			symbol,
+			exchange,
+			candleCollName,
+			pair,
+			expiredCandles,
+			candle,
+		} = candleInfo;
 
-		// Update the stats; open, volume and lastUpdate
-		const statsCollection = await Database.dbReference.statsDb.collection("stats:simple");
-		const stats = await statsCollection.findOne({ name });
+		const simpleStatCollName = `simple:${name}:${symbol}`;
+		const simpleStatColl = await Database.dbReference.statsDb.collection(simpleStatCollName);
+		const simpleStat = await simpleStatColl.findOne({ pair, exchangeName: exchange });
+		
+		const candleColl = await Database.dbReference.candlesDb.collection(candleCollName);
 
-		console.log("statsrstrstrst", stats)
+		// Deduct expired volume
+		const expiredVolume = expiredCandles.reduce((volume, candle) => volume + candle.volume, 0);
+		simpleStat.daily.volume -= expiredVolume;
+		
+		// Recalculate highs/lows if neccessary
+		const expiredHigh = expiredCandles.some(({ high }) => high === simpleStat.daily.high);
+		const expiredLow = expiredCandles.some(({ low }) => low === simpleStat.daily.low);
+		if (expiredHigh || expiredLow) {
+			const highestCandle = (await candleColl.find().sort({ high: -1 }).limit(1).toArray()).last();
+			const lowestCandle = (await candleColl.find().sort({ low: 1 }).limit(1).toArray()).last();
 
-		stats.open.daily = _.last(_.sortBy(expiredCandles, "openTimestamp"))?.close || 0.0;
+			simpleStat.daily.high = highestCandle?.high;
+			simpleStat.daily.low = lowestCandle?.low;
+		}
 
-		const staleVolume = expiredCandles.reduce((volume, candle) => volume + candle.volume, 0);
-		stats.volume -= staleVolume;
-		stats.volume += candle.volume;
+		// Add and update the new volume, close, high, low and lastUpdate
+		simpleStat.daily.volume += candle.volume;
+		simpleStat.daily.open = (await candleColl.find().sort({ openTimestamp: 1 }).limit(1).toArray()).last()?.open;
+		simpleStat.daily.high = Math.max(simpleStat.daily.high, candle.high);
+		simpleStat.daily.low = Math.min(simpleStat.daily.low, candle.low);
+		simpleStat.daily.close = candle.close;
 
-		stats.lastUpdate = Date.now();
+		simpleStat.lastUpdate = Date.now();
 
-		console.log(stats);
-
-		const candleCollection = await Database.dbReference.candlesDb.collection(candleCollectionName);
-		const list = await candleCollection.find(); 
-		console.log("candles", list);
-
-		statsCollection.findOneAndUpdate(
-			{ _id: stats._id},
-			{ $set: { ...stats }},
-		);
+		await simpleStatColl.updateOne({ pair, exchangeName: exchange}, { "$set": simpleStat, });
 	});
 }
 

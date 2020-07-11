@@ -11,14 +11,14 @@ export function start(coins: typeUtils.CoinConfig[]) {
 	console.log("Starting Binance Feeder");
 
 	// Go through all coins and extract their Binance pairs
-	const binancePairs = coins.map(({ exchanges, name }) => {
+	const binancePairs = coins.map(({ exchanges, name, symbol }) => {
 		const pairs = exchanges.find(({ exchangeName }) => exchangeName === "Binance")?.pairs; 
-		return pairs && { pairs, name };
+		return pairs && { pairs, name, symbol };
 	}).filter(item => item);
 
 	// For each pair map it to the coins name
-	const pairToNameMap = binancePairs.reduce(($map, coin) => {
-		coin.pairs.forEach(pair => $map[pair] = coin.name);
+	const pairToCoinMap = binancePairs.reduce(($map, { name, symbol, pairs }) => {
+		pairs.forEach(pair => $map[pair] = { name, symbol });
 		return $map;
 	}, {});
 
@@ -32,7 +32,8 @@ export function start(coins: typeUtils.CoinConfig[]) {
 			isBuy: maker,	
 			timestamp: eventTime,
 			pair: symbol,
-			name: pairToNameMap[symbol],
+			name: pairToCoinMap[symbol].name,
+			symbol: pairToCoinMap[symbol].symbol
 		};
 
 		Events.emit('NEW_TICK', parsedTick);

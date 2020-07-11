@@ -38,7 +38,7 @@ class Database {
 	async initialise(coins: CoinConfig[], candleSubscriptions: CandleSubscription[]) {
 		this.initialiseCoinStats(coins);
 		await this.initialiseCandles(coins, candleSubscriptions);
-		await this.initialiseCoinExchangeStats(coins);
+		await this.initialiseCoinSimpleStats(coins);
 	}
 
 	async initialiseCandles(coins: CoinConfig[], candleSubscriptions: CandleSubscription[]) {
@@ -106,7 +106,6 @@ class Database {
 		
 		const coinStatsCollection: any =  await this.dbReference.statsDb.collection("coinStats");
 		return Promise.all(coins.map(({ name, symbol, exchanges }) => {
-			const latestStats = { open: { daily: 0 }, volume: 0, }; // Calculate these from candles
 			return coinStatsCollection.findOneAndUpdate(
 				{ name, symbol, exchanges: exchanges.map(({ exchangeName }) => exchangeName) },
 				{ "$set": { 
@@ -128,7 +127,7 @@ class Database {
 					'$jsonSchema': {
 						'bsonType': 'object',
 						"description": "Updated if time a new candle is added AND it has been at least 5 minutes after last update",
-						'required': ['lastUpdate', 'name', 'symbol', 'open', "volume"],
+						'required': ['lastUpdate', 'name', 'symbol', "exchanges"],
 						'properties': {
 							"lastUpdate": { "bsonType": ["double", "int"] },
 							"name": { "bsonType": "string" },
@@ -144,58 +143,62 @@ class Database {
 		});
 	}
 
-	async initialiseCoinExchangeStats(coins) {
+	async initialiseCoinSimpleStats(coins) {
 		// Go through each pair and calculate the stats using the candles that we just wrote to the db
 		const statsCollections = await this.dbReference.statsDb.listCollections().toArray();
 
 		const promises = coins.map(({ name, symbol, exchanges, }) =>
 			Promise.all(exchanges.map(async ({ exchangeName, pairs }) => {
-				const collName = `${name}:${symbol}:${exchangeName}`;
+				const collName = `simple:${name}:${symbol}`;
 				const collExists = statsCollections.find(({ name }) => name === collName);
-				if (!collExists) await this.createCoinExchangeStats(name, symbol, exchangeName);
+				if (!collExists) await this.createCoinSimpleStats(name, symbol);
 
 				const coll: any =  await this.dbReference.statsDb.collection(collName);
-				
-				return Promise.all(pairs.map(async pair => {
-					let statsForPair = await coll.findOne({ pair });
+
+				const updateSimpleStats = async pair => {
+					const query = { pair, exchangeName };
+					let statsForPair = await coll.findOne(query);
 					if (!statsForPair) {
-						statsForPair = await coll.insertOne({
+						statsForPair = {
 							pair,
+							exchangeName,
 							lastUpdate: new Date().getTime(),
-							simpleStats: {
-								daily: {
-									open: 0,
-									close: 0,
-									high: 0,
-									low: 0,
-									volume: 0,
-								}
-							},
-						});
+							daily: {
+								open: 0,
+								close: 0,
+								high: 0,
+								low: 0,
+								volume: 0,
+							}
+						};
+						await coll.insertOne(statsForPair);
 					}
 
 					const dailyCandleCollName = `${name}:${pair}:${"15m"}:${DAY}:${exchangeName}`;
 					const dailyCandleColl = await this.dbReference.candlesDb.collection(dailyCandleCollName);
 
 					const fifteenMinCandles: Candle[] = await dailyCandleColl.find().toArray();
-
+					
 					if (fifteenMinCandles.length !== 0) {
 						// Calculate the simple stats
 						statsForPair.daily = {
 							open: fifteenMinCandles.first().open,
 							close: fifteenMinCandles.last().close,
 							...fifteenMinCandles.reduce<any>((totals, candle) => ({
-								high: candle.high > totals.high || !candle.high ? candle.high : totals.high,
-								low: candle.low < totals.low || !candle.low	? candle.low : totals.low,
+								high: Math.max(candle.high, totals.high),
+								low: Math.min(candle.low, totals.low) || candle.low,
 								volume: totals.volume + candle.volume,
 							}), { volume: 0, high: 0, low: 0 }),
 						};
-
 					}
-					
-					await coll.findOneAndUpdate({ pair }, { "$set": statsForPair });
-					console.log(`Initialised stats for ${name}:${symbol}:${exchangeName}:${pair}`);
-				}));
+
+					await coll.findOneAndUpdate(query, { "$set": statsForPair });
+					console.log(`Initialised simple stats for ${collName}`);
+				}
+				
+				return Promise.all(pairs.map(async pair => Promise.all([
+					updateSimpleStats(pair),
+				])));
 			}))
 		);
 
@@ -205,40 +208,36 @@ class Database {
 	/**
 	 * Contains an array of 24hr price and volume info for each pair on the exchange
 	 */
-	async createCoinExchangeStats(name, symbol, exchange) {
+	async createCoinSimpleStats(name, symbol) {
+		const collName = `simple:${name}:${symbol}`;
 		return new Promise(async resolve => {
-			const coinStatsCollection = await this.dbReference.statsDb.createCollection(`${name}:${symbol}:${exchange}`, {
+			const coinStatsCollection = await this.dbReference.statsDb.createCollection(collName, {
 				'validator': {
 					'$jsonSchema': {
 						'bsonType': 'object',
 						"description": "Updated if time a new candle is added AND it has been at least 5 minutes after last update",
-						'required': ['lastUpdate', "pair", 'simpleStats',],
+						'required': ['lastUpdate', "pair", "exchangeName", "daily"],
 						'properties': {
 							"lastUpdate": { "bsonType": ["double", "int"] },
 							"pair": { "bsonType": "string" },
-							"simpleStats": { 
+							"exchangeName": { "bsonType": "string" },
+							"daily": { 
 								"bsonType": "object",
-								"required": ["daily"],
+								"required": ["open", "close", "high", "volume", "low"],
 								"properties": {
-									"daily": { 
-										"bsonType": "object",
-										"required": ["open", "close", "high", "volume", "low"],
-										"properties": {
-											"open": { "bsonType": ["double", "int"] },
-											"close": { "bsonType": ["double", "int"] },
-											"high": { "bsonType": ["double", "int"] },
-											"volume": { "bsonType": ["double", "int"] },
-											"low": { "bsonType": ["double", "int"] },
-										} 
-									},
-								}
-							}
+									"open": { "bsonType": ["double", "int"] },
+									"close": { "bsonType": ["double", "int"] },
+									"high": { "bsonType": ["double", "int"] },
+									"volume": { "bsonType": ["double", "int"] },
+									"low": { "bsonType": ["double", "int"] },
+								} 
+							},
 						}
 					}
 				} 	
 			});
 
-			console.log(`Created coinExchangeStats collection ${name}:${symbol}:${exchange} in stats db`);
+			console.log(`Created coin simple stats collection ${collName} in stats db`);
 			resolve(coinStatsCollection);
 		});
 	}

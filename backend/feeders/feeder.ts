@@ -1,12 +1,13 @@
 import BinanceFeeder = require("./binance");
-import Candles from "./candles";
+import Candles, { CandleSubscription } from "./candles";
+import { CoinConfig } from "../utils/types";
 
 class Feeder {
-	start(coins) {
+	start(coins: CoinConfig[], candleSubscriptions: CandleSubscription[]) {
 		console.log('Starting Feeders...');
 		
-		BinanceFeeder.start(coins); // This should be started with a single config containing all info
-		Candles.start();
+		BinanceFeeder.start(coins);
+		Candles.start(candleSubscriptions);
 	}
 }	
 
