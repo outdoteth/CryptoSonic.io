@@ -13,7 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "binance-api-node": "^0.10.4",
-    "lodash": "^4.17.15",
+    "lodash": "^4.17.21",
     "mongodb": "^3.5.5",
     "node-binance-api": "^0.10.6",
     "redis": "^3.0.2",
